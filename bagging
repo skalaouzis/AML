@@ -1,0 +1,99 @@
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+import tensorflow as tf
+from IPython.display import YouTubeVideo
+import os.path
+from sklearn import preprocessing
+from sklearn.svm import SVC, LinearSVC
+from sklearn.naive_bayes import BernoulliNB
+from sklearn import tree as tr
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.ensemble import BaggingClassifier
+from sklearn.metrics import matthews_corrcoef
+import time
+from sklearn.metrics import precision_score
+from sklearn.metrics import average_precision_score
+import pickle
+from tempfile import TemporaryFile
+
+#from sklearn.ensemble import RandomForestClassifier
+
+vid_ids = []
+labels = []
+mean_rgb = []
+mean_audio = []
+for i in range(1):
+    #filepath = os.path.join("../untitled/", "train-5.tfrecord")
+    filepath = "../ergasia/train-5.tfrecord"
+    a2 = filepath.replace("train-5",str(i))
+    print(a2)
+    for example in tf.python_io.tf_record_iterator(a2):
+        tf_example = tf.train.Example.FromString(example)
+        vid_ids.append(tf_example.features.feature['video_id'].bytes_list.value[0].decode(encoding='UTF-8'))
+        labels.append(tf_example.features.feature['labels'].int64_list.value)
+        mean_rgb.append(tf_example.features.feature['mean_rgb'].float_list.value)
+        mean_audio.append(tf_example.features.feature['mean_audio'].float_list.value)
+
+#print(type(labels))
+print(labels)
+num = tuple(x for x in range(0, 4716))
+mlb = preprocessing.MultiLabelBinarizer(classes=num)
+y = mlb.fit_transform(labels)
+
+print(y)
+
+#print(len(y))
+#print(type(y))
+
+mean_rgb_2 = np.asarray(mean_rgb)
+mean_audio_2 = np.asarray(mean_audio)
+table = np.hstack([mean_rgb_2, mean_audio_2])
+#print(table[1])
+#print(mean_rgb_2[1])
+#print(mean_audio_2[1])
+
+#video_lvl_record = "../ergasia/validation-7.tfrecord"
+mean_rgb_test = []
+mean_audio_test = []
+labels_test = []
+for i in range(7,9):
+    filepath = "../ergasia/train-5.tfrecord"
+    a2 = filepath.replace("train-5",str(i))
+    print(a2)
+    for example_test in tf.python_io.tf_record_iterator(a2):
+        tf_example_test = tf.train.Example.FromString(example_test)
+        labels_test.append(tf_example_test.features.feature['labels'].int64_list.value)
+        mean_rgb_test.append(tf_example_test.features.feature['mean_rgb'].float_list.value)
+        mean_audio_test.append(tf_example_test.features.feature['mean_audio'].float_list.value)
+
+mean_rgb_test_2 = np.asarray(mean_rgb_test)
+mean_audio_test_2 = np.asarray(mean_audio_test)
+test_table = np.hstack([mean_rgb_test_2, mean_audio_test_2])
+
+y_test = mlb.fit_transform(labels_test)
+print(y_test)
+
+clf = tr.DecisionTreeClassifier()
+bagger = BaggingClassifier(base_estimator=clf,n_estimators=5)
+level_one_pred = np.zeros([len(y_test),4716])
+start_time = time.time()
+for i in range (0,4716):
+    start_time_iter = time.time()
+    cur_bagger = bagger.fit(table, y[:,i])
+    level_one_pred[:,i] = bagger.predict(test_table)
+    #print(level_one_pred[:10,:])
+    time_end_loop = time.time()
+    print("End of iteration: ")
+    print(i)
+    print("Iteration ended in time:%.4f" % (time_end_loop - start_time_iter))
+
+end_total_time = time.time()
+print("Total fitting and validation time:%.4f" % (end_total_time - start_time))
+
+level1_avg_pres = average_precision_score(y_test, level_one_pred, average='micro')
+level1_avg_pres_mean = average_precision_score(y_test, level_one_pred, average='macro')
+print("average precision considering each element of the label indicator matrix as a label for the binary relevance model: ")
+print(level1_avg_pres)
+print("unweighted mean of precision for each label: ")
+print(level1_avg_pres_mean)
